@@ -7,6 +7,22 @@ export const EASTERN_TRAILS: ReadonlyArray<{name:string;points:ReadonlyArray<rea
 export const EASTERN_CLEARINGS = [
   {x:193,z:58,radius:25}, {x:210,z:-42,radius:26},
 ] as const;
+/** Narrow, ground-level access to the actual work surfaces, not extra landmarks. */
+export const EASTERN_WORK_PATHS: ReadonlyArray<{name:string;points:ReadonlyArray<readonly[number,number]>}> = [
+  {name:'orchard-work-path',points:[[193,58],[195,68],[189,73.5]]},
+  {name:'orchard-picnic-path',points:[[195,68],[202,72],[207,73.5]]},
+  {name:'mill-work-path',points:[[210,-42],[207,-47],[210,-50],[210,-53.3]]},
+  {name:'mill-yard-path',points:[[207,-47],[201,-52],[197,-58]]},
+];
+export function easternWorkPathDistance(x:number,z:number):number {
+  let distance=Infinity;
+  for(const path of EASTERN_WORK_PATHS)for(let i=1;i<path.points.length;i++) {
+    const [ax,az]=path.points[i-1],[bx,bz]=path.points[i],dx=bx-ax,dz=bz-az;
+    const t=Math.max(0,Math.min(1,((x-ax)*dx+(z-az)*dz)/(dx*dx+dz*dz)));
+    distance=Math.min(distance,Math.hypot(x-ax-t*dx,z-az-t*dz));
+  }
+  return distance;
+}
 export function easternTrailDistance(x:number,z:number):number {
   let distance=Infinity;
   for(const trail of EASTERN_TRAILS)for(let i=1;i<trail.points.length;i++) {

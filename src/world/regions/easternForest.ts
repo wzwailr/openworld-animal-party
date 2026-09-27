@@ -3,7 +3,8 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createBarkTexture, createLeafCluster, grassGeometry, windMaterial } from '../../entities/foliage';
 import { blossomGeometry, woodGrain } from '../../entities/festivalLandmarks';
 import { getTerrainHeight, isPath, seededRandom } from '../landscape';
-import { easternTrailDistance } from '../easternForestLayout';
+import { easternTrailDistance, easternWorkPathDistance } from '../easternForestLayout';
+import { batchLeafClusters, createEasternGroundGardens, createMillMasonryTexture } from './easternGroundGardens';
 import type { Box2D, QualityTier, UpdateFn } from '../../core/types';
 
 /** Two activity clearings, connected by the shared east loop; no elevated fake floors. */
@@ -13,6 +14,7 @@ export function createEasternForest() {
   const meadow=new THREE.Group();meadow.name='region:windmill-meadow';
   const edge=new THREE.Group();edge.name='eastern-woodland-edge';group.add(orchard,meadow,edge);
   const colliders:Box2D[]=[],animations:UpdateFn[]=[];
+  const canopies:THREE.InstancedMesh[]=[];
   const wood=new THREE.MeshStandardMaterial({color:0x947651,map:woodGrain(),roughness:.87});
   const dark=new THREE.MeshStandardMaterial({color:0x65523a,map:createBarkTexture(),roughness:1});
   const stone=new THREE.MeshStandardMaterial({color:0xa5a38a,roughness:1});
@@ -48,6 +50,7 @@ export function createEasternForest() {
       beam(root,new THREE.Vector3(x,y+height*.62*size,z),end,.14*size);
       const crown=createLeafCluster((fruit?2.3:3.2)*size,fruit?(i%2?0x7c9348:0x698440):0x617a45,Math.round(x*31+z*17+i*63));
       crown.position.copy(end);crown.name=fruit?'orchard-fruit-canopy':'east-forest-canopy';root.add(crown);
+      canopies.push(crown);
       if(fruit)for(let j=0;j<9;j++) {
         const angle=j*2.4,r=(1.1+(j%3)*.3)*size;
         const fruitGeo=new THREE.SphereGeometry(.13*size,10,8);fruitGeo.scale(1,.9,1);
@@ -84,12 +87,10 @@ export function createEasternForest() {
 
   const mill=new THREE.Group();mill.name='meadow-grain-mill';meadow.add(mill);
   const mx=210,mz=-57,my=getTerrainHeight(mx,mz);
-  add(mill,new THREE.CylinderGeometry(1.6,2.7,7.4,32,5),stone,mx,my+3.7,mz);block(mx,mz,2.8);
+  const stoneMap=createMillMasonryTexture();
+  const masonry=new THREE.Mesh(new THREE.CylinderGeometry(1.6,2.7,7.4,40,8),new THREE.MeshStandardMaterial({color:0xc0b69b,map:stoneMap,bumpMap:stoneMap,bumpScale:.065,roughness:.96}));
+  masonry.name='windmill-masonry';masonry.position.set(mx,my+3.7,mz);masonry.castShadow=true;masonry.receiveShadow=true;mill.add(masonry);block(mx,mz,2.8);
   add(mill,new THREE.ConeGeometry(2.3,3.1,32),roof,mx,my+8.85,mz);
-  for(let i=0;i<42;i++){
-    const a=i*2.399,y=my+.35+Math.floor(i/10)*.5,r=2.7-(y-my)/7.4*1.1;
-    add(mill,new THREE.BoxGeometry(.65,.33,.12),i%3?stone:wood,mx+Math.cos(a)*r,y,mz+Math.sin(a)*r,new THREE.Euler(0,-a+Math.PI/2,0));
-  }
   box(mill,mx,my+1,mz+2.6,1.1,2,.08,dark);
   box(mill,mx-.22,my+1,mz+2.66,.035,1.8,.025,wood);
   const window=new THREE.Mesh(new THREE.CircleGeometry(.42,24),new THREE.MeshStandardMaterial({color:0xd5b777,emissive:0x9b6f2d,emissiveIntensity:.3}));
@@ -132,6 +133,13 @@ export function createEasternForest() {
     const z=i%2?-104+edgeRandom()*17:-110+edgeRandom()*239;
     tree(edge,x,z,.9+edgeRandom()*.7);
   }
+  // Layered southern woodland closes the orchard's formerly bare horizon.
+  // A separate seed leaves every pre-existing tree and path unchanged.
+  const southernRandom=seededRandom(4303);
+  for(let i=0;i<24;i++){
+    const x=163+(i%8)*12+southernRandom()*5,z=102+Math.floor(i/8)*13+southernRandom()*6;
+    tree(edge,x,z,.95+southernRandom()*.8);
+  }
   // Roof ribs, a shaded porch and a low garden wall give the landmark readable
   // construction from the path, not merely a cylinder and rotating cross.
   for(let i=0;i<20;i++){
@@ -145,6 +153,7 @@ export function createEasternForest() {
     const x=193+i*1.5,z=-74+Math.sin(i*.23)*2;
     const y=getTerrainHeight(x,z);add(granary,new THREE.DodecahedronGeometry(.7,1),stone,x,y+.25,z,new THREE.Euler(i*.4,i*.9,0));
   }
+  const gardens=createEasternGroundGardens(colliders);group.add(gardens.group);animations.push(gardens.update);
   // Flowers are interleaved by patch so reduced quality retains both destinations.
   const rng=seededRandom(927),count=2400,flowers=new THREE.InstancedMesh(blossomGeometry(),new THREE.MeshStandardMaterial({color:0xffffff,roughness:.95,side:THREE.DoubleSide}),count);
   const stems=new THREE.InstancedMesh(new THREE.CylinderGeometry(.018,.03,.55,4).translate(0,.275,0),new THREE.MeshStandardMaterial({color:0x657740,roughness:1}),count);
@@ -153,7 +162,7 @@ export function createEasternForest() {
   const dummy=new THREE.Object3D(),color=new THREE.Color();let placed=0;
   for(let i=0;i<count;i++){
     const [cx,cz,rx,rz]=patches[i%patches.length],a=rng()*Math.PI*2,r=Math.sqrt(rng()),x=cx+Math.cos(a)*r*rx,z=cz+Math.sin(a)*r*rz;
-    if(isPath(x,z,.8)||colliders.some(b=>x>b.minX-1&&x<b.maxX+1&&z>b.minZ-1&&z<b.maxZ+1))continue;
+    if(isPath(x,z,.8)||easternWorkPathDistance(x,z)<1.65||colliders.some(b=>x>b.minX-1&&x<b.maxX+1&&z>b.minZ-1&&z<b.maxZ+1))continue;
     const s=.6+rng()*.85,y=getTerrainHeight(x,z);dummy.position.set(x,y,z);dummy.rotation.set(0,a,0);dummy.scale.setScalar(s);dummy.updateMatrix();stems.setMatrixAt(placed,dummy.matrix);
     dummy.position.y+=.54*s;dummy.rotation.x=.15*Math.sin(a);dummy.updateMatrix();flowers.setMatrixAt(placed,dummy.matrix);
     flowers.setColorAt(placed++,color.setHex([0xb6a0c4,0xc6b4d0,0xe5d8aa,0xc88f9a][i%4]));
@@ -166,7 +175,7 @@ export function createEasternForest() {
     const patch=patches[i%patches.length];
     const x=i%2?patch[0]+(grassRandom()-.5)*patch[2]*2.5:160+grassRandom()*90;
     const z=i%2?patch[1]+(grassRandom()-.5)*patch[3]*2.5:-104+grassRandom()*220;
-    if(isPath(x,z,.6)||colliders.some(b=>x>b.minX-.4&&x<b.maxX+.4&&z>b.minZ-.4&&z<b.maxZ+.4))continue;
+    if(isPath(x,z,.6)||easternWorkPathDistance(x,z)<1.6||colliders.some(b=>x>b.minX-.4&&x<b.maxX+.4&&z>b.minZ-.4&&z<b.maxZ+.4))continue;
     dummy.position.set(x,getTerrainHeight(x,z)-.025,z);dummy.rotation.set(0,grassRandom()*Math.PI*2,0);dummy.scale.setScalar(.7+grassRandom()*.9);dummy.updateMatrix();grass.setMatrixAt(grassCount++,dummy.matrix);
   }
   grass.count=grassCount;group.add(grass);animations.push(time=>{grassWind.time.value=time;});
@@ -176,5 +185,6 @@ export function createEasternForest() {
     if(combined){const mesh=new THREE.Mesh(combined,material);mesh.name='crafted-east-detail';mesh.castShadow=true;mesh.receiveShadow=true;root.add(mesh);}
     new Set([...parts,...nonIndexed]).forEach(g=>g.dispose());
   }
-  return {group,colliders,animations,setQuality(tier:QualityTier){flowers.count=stems.count=tier==='low'?Math.min(650,placed):tier==='medium'?Math.min(1300,placed):placed;grass.count=tier==='low'?Math.min(3500,grassCount):tier==='medium'?Math.min(7000,grassCount):grassCount;}};
+  const crowns=batchLeafClusters(canopies);group.add(...crowns.meshes);
+  return {group,colliders,animations,setQuality(tier:QualityTier){crowns.setQuality(tier);gardens.setQuality(tier);flowers.count=stems.count=tier==='low'?Math.min(650,placed):tier==='medium'?Math.min(1300,placed):placed;grass.count=tier==='low'?Math.min(3500,grassCount):tier==='medium'?Math.min(7000,grassCount):grassCount;}};
 }
